@@ -6,7 +6,11 @@ export interface Env {
   // Secrets (wrangler secret put ...)
   LOGPUSH_SECRET?: string;
   PAN_API_KEY?: string;
-  DASHBOARD_PASSWORD?: string;
+
+  // Cloudflare Access config. ACCESS_TEAM_DOMAIN/ACCESS_AUD are set as secrets
+  // (kept out of the public repo) once the Access app exists.
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
 
   // Vars (wrangler.jsonc)
   IP_FIELD: string;
@@ -17,8 +21,6 @@ export interface Env {
   STALE_AFTER_MINUTES: string;
   MOCK_ENABLED: string;
   ACCESS_ENABLED: string;
-  ACCESS_TEAM_DOMAIN: string;
-  ACCESS_AUD: string;
 }
 
 /** A current IP -> user mapping row. */

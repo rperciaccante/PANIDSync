@@ -71,10 +71,13 @@
     "STALE_AFTER_MINUTES": "120",
     // Enable the built-in mock PAN receiver at POST /mock/user-id + GET /mock.
     "MOCK_ENABLED": "true",
-    // Cloudflare Access JWT verification (belt-and-suspenders on top of a
-    // zone-level Access app). Leave false unless you set the two vars below.
-    "ACCESS_ENABLED": "false",
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": ""
+    // In-worker Cloudflare Access JWT verification (defense-in-depth on top of
+    // one-click Access enabled on the workers.dev route). When true, the worker
+    // validates Cf-Access-Jwt-Assertion against the team JWKS. Provide the team
+    // domain + application AUD as SECRETS (kept out of this public repo):
+    //   wrangler secret put ACCESS_TEAM_DOMAIN   # e.g. https://<team>.cloudflareaccess.com
+    //   wrangler secret put ACCESS_AUD           # Access application Audience tag
+    // Until both are set, accessGuard() is a no-op (edge Access is the gate).
+    "ACCESS_ENABLED": "true"
   }
 }

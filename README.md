@@ -86,27 +86,31 @@ Non-secret settings live in `wrangler.jsonc` under `vars`:
 Secrets (**never commit**):
 
 ```bash
-wrangler secret put LOGPUSH_SECRET     # required — Logpush Authorization header value
-wrangler secret put PAN_API_KEY        # only when PAN_HOST is a real firewall
-wrangler secret put DASHBOARD_PASSWORD # dashboard login gate (see below)
+wrangler secret put LOGPUSH_SECRET      # required — Logpush Authorization header value
+wrangler secret put PAN_API_KEY         # only when PAN_HOST is a real firewall
+wrangler secret put ACCESS_TEAM_DOMAIN  # https://<team>.cloudflareaccess.com
+wrangler secret put ACCESS_AUD          # Access application Audience (AUD) tag
 ```
 
-## Protecting the dashboard
+## Protecting the dashboard (Cloudflare Access)
 
-The dashboard + control API show user PII, so they're gated. Two layers:
+The dashboard + control API show user PII, so they're gated with **Cloudflare
+Access**, enabled directly on the `workers.dev` route (one-click Access for
+Workers):
 
-1. **In-worker login gate (works on `workers.dev`).** Set `DASHBOARD_PASSWORD`
-   and the worker requires a password login (`/login`) that mints a 12h
-   HMAC-signed cookie. `/api/logpush`, `/mock/user-id`, and `/health` stay open
-   (ingest is guarded by `LOGPUSH_SECRET`). If `DASHBOARD_PASSWORD` is unset the
-   gate **fails open** (dashboard public) — so set it before real data flows.
-   Log out at `/logout`.
-2. **Cloudflare Access (needs a custom domain).** Access can't attach to a
-   `*.workers.dev` hostname. Put the worker on a custom domain in a zone you
-   control, add an Access self-hosted app, and (optionally) set
-   `ACCESS_ENABLED=true` + `ACCESS_TEAM_DOMAIN` + `ACCESS_AUD` for in-worker JWT
-   verification. Add an Access **Bypass** policy for `/api/logpush` so Logpush
-   still reaches the worker.
+1. **Workers & Pages → your Worker → Settings → Domains & Routes → `workers.dev`
+   → Enable Cloudflare Access**, then **Manage Cloudflare Access** to set the
+   policy (allowed emails / groups).
+2. **Keep ingest reachable:** add an Access application scoped to the
+   `/api/logpush` path (also `/health`, `/mock/user-id`) with a **Bypass**
+   policy — or authenticate the Logpush job with an Access **service token**
+   (`header_CF-Access-Client-Id` / `header_CF-Access-Client-Secret` in the job's
+   destination). Ingest is independently protected by `LOGPUSH_SECRET`.
+3. **Defense-in-depth (optional but recommended):** set `ACCESS_ENABLED=true`
+   (default) plus the `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` secrets so the worker
+   also verifies the `Cf-Access-Jwt-Assertion` token against the team JWKS. Until
+   both secrets are set, the in-worker check is a no-op and edge Access is the
+   sole gate.
 
 ## Wiring up Cloudflare Logpush
 

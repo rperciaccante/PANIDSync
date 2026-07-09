@@ -11,9 +11,9 @@ LOGPUSH_SECRET="change-me-to-a-long-random-string"
 # firewall; the built-in mock receiver ignores it.
 PAN_API_KEY="paste-pan-api-key-here"
 
-# Password for the in-worker dashboard login gate. Protects the dashboard +
-# control API on workers.dev (where Cloudflare Access can't attach). If unset,
-# the gate fails OPEN (dashboard is public) — set it in production via
-# `wrangler secret put DASHBOARD_PASSWORD`. Ingest (/api/logpush) stays open,
-# guarded by LOGPUSH_SECRET.
-DASHBOARD_PASSWORD="choose-a-strong-password"
+# Cloudflare Access (in-worker JWT verification, defense-in-depth behind the
+# one-click Access enabled on the workers.dev route). Set both in production via
+# `wrangler secret put ...`. Until both are set, the JWT check is a no-op.
+# ACCESS_ENABLED is a var in wrangler.jsonc (default "true").
+ACCESS_TEAM_DOMAIN="https://your-team.cloudflareaccess.com"
+ACCESS_AUD="your-access-application-audience-tag"
