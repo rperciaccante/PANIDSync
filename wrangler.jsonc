@@ -1,0 +1,80 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "panidsync",
+  "main": "src/index.tsx",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+
+  // ---------------------------------------------------------------------------
+  // Account & routing
+  // ---------------------------------------------------------------------------
+  // account_id is intentionally NOT committed. Set CLOUDFLARE_ACCOUNT_ID in your
+  // environment, or add "account_id": "<id>" here locally (it's gitignored-safe
+  // to keep out of a public repo). See README "Deploy".
+  //
+  // To serve on a custom domain, uncomment and edit:
+  // "routes": [{ "pattern": "panidsync.example.com", "custom_domain": true }],
+
+  // ---------------------------------------------------------------------------
+  // Scheduled push to Palo Alto (cron). Default: every 5 minutes.
+  // ---------------------------------------------------------------------------
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+
+  // ---------------------------------------------------------------------------
+  // D1 — mapping store. Run `npm run d1:create` then paste the id below.
+  // ---------------------------------------------------------------------------
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "panidsync-db",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // ---------------------------------------------------------------------------
+  // KV — mock-receiver payload capture + small runtime state.
+  // Run `npm run kv:create` then paste the id below.
+  // ---------------------------------------------------------------------------
+  "kv_namespaces": [
+    {
+      "binding": "STATE",
+      "id": "REPLACE_WITH_KV_NAMESPACE_ID"
+    }
+  ],
+
+  // ---------------------------------------------------------------------------
+  // Non-secret config. Secrets (LOGPUSH_SECRET, PAN_API_KEY) go via
+  // `wrangler secret put` — never commit them. See .dev.vars.example.
+  // ---------------------------------------------------------------------------
+  "vars": {
+    // Which Logpush dataset field carries the client IP we map to a user.
+    // For zero_trust_network_sessions "SourceIP" is the client's public IP.
+    "IP_FIELD": "SourceIP",
+    // Palo Alto firewall base URL. Default points at THIS worker's built-in
+    // mock receiver so the whole flow works with zero external dependencies.
+    // Set to https://<firewall> to target a real device.
+    "PAN_HOST": "self:mock",
+    // Optional vsys target on the firewall (blank = default).
+    "PAN_VSYS": "",
+    // Default User-ID mapping timeout in minutes (0 = never expire).
+    "PAN_TIMEOUT_MINUTES": "60",
+    // Prefix applied to the user name sent to PAN, e.g. "corp\\" for domain\\user.
+    "PAN_USER_PREFIX": "",
+    // Consider a mapping stale (eligible for logout) after this many minutes
+    // with no fresh Logpush activity. 0 = never auto-logout.
+    "STALE_AFTER_MINUTES": "120",
+    // Enable the built-in mock PAN receiver at POST /mock/user-id + GET /mock.
+    "MOCK_ENABLED": "true",
+    // Cloudflare Access JWT verification (belt-and-suspenders on top of a
+    // zone-level Access app). Leave false unless you set the two vars below.
+    "ACCESS_ENABLED": "false",
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": ""
+  }
+}

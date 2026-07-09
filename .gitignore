@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Wrangler / Cloudflare
+.wrangler/
+dist/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Secrets & local env
+.env
+.env.*
+*.key
+*.pem
+
+# Logs & OS
+*.log
+npm-debug.log*
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Internal agent/ops context (kept local, not for the public repo)
+AGENTS.md

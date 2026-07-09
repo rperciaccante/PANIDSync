@@ -1,0 +1,12 @@
+# Copy to .dev.vars for local `wrangler dev`, and set the real values in
+# production with `wrangler secret put <NAME>`. NEVER commit .dev.vars.
+
+# Shared secret that Cloudflare Logpush must send in the Authorization header
+# of every batch (configured as header_name/header_value on the Logpush job).
+# The ingest route rejects any batch that doesn't match.
+LOGPUSH_SECRET="change-me-to-a-long-random-string"
+
+# Palo Alto PAN-OS User-ID API key (generate via the firewall's
+# /api/?type=keygen endpoint). Only needed when PAN_HOST points at a real
+# firewall; the built-in mock receiver ignores it.
+PAN_API_KEY="paste-pan-api-key-here"

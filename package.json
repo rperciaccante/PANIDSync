@@ -1,0 +1,31 @@
+{
+  "name": "panidsync",
+  "version": "0.1.0",
+  "description": "Cloudflare Worker that ingests Zero Trust Logpush and syncs authenticated user-to-IP mappings to a Palo Alto firewall via the PAN-OS User-ID API",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "start": "wrangler dev",
+    "tail": "wrangler tail",
+    "d1:create": "wrangler d1 create panidsync-db",
+    "kv:create": "wrangler kv namespace create STATE",
+    "d1:migrate:local": "wrangler d1 migrations apply panidsync-db --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply panidsync-db --remote",
+    "cf-typegen": "wrangler types"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "hono": "^4.12.28"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.107.1"
+  }
+}
