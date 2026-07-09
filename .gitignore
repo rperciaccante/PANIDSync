@@ -25,3 +25,4 @@ npm-debug.log*
 
 # Internal agent/ops context (kept local, not for the public repo)
 AGENTS.md
+overview.md
