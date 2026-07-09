@@ -2,6 +2,13 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { Env } from "./types";
 import { accessGuard } from "./lib/access";
+import {
+  clearSessionCookie,
+  dashGuard,
+  loginPageHtml,
+  makeSession,
+  setSessionCookie,
+} from "./lib/auth";
 import { extractRecord, parseNdjson, readLogpushBody } from "./lib/logpush";
 import {
   countByState,
@@ -134,14 +141,42 @@ app.post("/api/", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// Protected UI + control API (Cloudflare Access)
+// Login gate (in-worker auth — works on workers.dev where Access can't attach)
 // ---------------------------------------------------------------------------
-app.use("/", accessGuard());
-app.use("/mock", accessGuard());
-app.use("/logs", accessGuard());
-app.use("/api/mappings", accessGuard());
-app.use("/api/push", accessGuard());
-app.use("/api/mock/clear", accessGuard());
+app.get("/login", (c) => {
+  const next = c.req.query("next") || "/";
+  // Already signed in? bounce to the dashboard.
+  return c.html(loginPageHtml(undefined, next));
+});
+
+app.post("/login", async (c) => {
+  const pw = c.env.DASHBOARD_PASSWORD;
+  const body = await c.req.parseBody();
+  const supplied = typeof body.password === "string" ? body.password : "";
+  const next = typeof body.next === "string" && body.next.startsWith("/") ? body.next : "/";
+  if (!pw) return c.redirect(next, 302); // gate disabled — nothing to check
+  if (supplied && supplied === pw) {
+    setSessionCookie(c, await makeSession(pw));
+    return c.redirect(next, 302);
+  }
+  return c.html(loginPageHtml("Incorrect password.", next), 401);
+});
+
+app.get("/logout", (c) => {
+  clearSessionCookie(c);
+  return c.redirect("/login", 302);
+});
+
+// ---------------------------------------------------------------------------
+// Protected UI + control API — in-worker login gate, plus optional CF Access
+// JWT verification (accessGuard is a no-op unless ACCESS_ENABLED=true).
+// ---------------------------------------------------------------------------
+app.use("/", dashGuard(), accessGuard());
+app.use("/mock", dashGuard(), accessGuard());
+app.use("/logs", dashGuard(), accessGuard());
+app.use("/api/mappings", dashGuard(), accessGuard());
+app.use("/api/push", dashGuard(), accessGuard());
+app.use("/api/mock/clear", dashGuard(), accessGuard());
 
 app.get("/", async (c) => {
   const env = c.env;

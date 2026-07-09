@@ -86,9 +86,27 @@ Non-secret settings live in `wrangler.jsonc` under `vars`:
 Secrets (**never commit**):
 
 ```bash
-wrangler secret put LOGPUSH_SECRET   # required — Logpush Authorization header value
-wrangler secret put PAN_API_KEY      # only when PAN_HOST is a real firewall
+wrangler secret put LOGPUSH_SECRET     # required — Logpush Authorization header value
+wrangler secret put PAN_API_KEY        # only when PAN_HOST is a real firewall
+wrangler secret put DASHBOARD_PASSWORD # dashboard login gate (see below)
 ```
+
+## Protecting the dashboard
+
+The dashboard + control API show user PII, so they're gated. Two layers:
+
+1. **In-worker login gate (works on `workers.dev`).** Set `DASHBOARD_PASSWORD`
+   and the worker requires a password login (`/login`) that mints a 12h
+   HMAC-signed cookie. `/api/logpush`, `/mock/user-id`, and `/health` stay open
+   (ingest is guarded by `LOGPUSH_SECRET`). If `DASHBOARD_PASSWORD` is unset the
+   gate **fails open** (dashboard public) — so set it before real data flows.
+   Log out at `/logout`.
+2. **Cloudflare Access (needs a custom domain).** Access can't attach to a
+   `*.workers.dev` hostname. Put the worker on a custom domain in a zone you
+   control, add an Access self-hosted app, and (optionally) set
+   `ACCESS_ENABLED=true` + `ACCESS_TEAM_DOMAIN` + `ACCESS_AUD` for in-worker JWT
+   verification. Add an Access **Bypass** policy for `/api/logpush` so Logpush
+   still reaches the worker.
 
 ## Wiring up Cloudflare Logpush
 

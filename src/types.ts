@@ -6,6 +6,7 @@ export interface Env {
   // Secrets (wrangler secret put ...)
   LOGPUSH_SECRET?: string;
   PAN_API_KEY?: string;
+  DASHBOARD_PASSWORD?: string;
 
   // Vars (wrangler.jsonc)
   IP_FIELD: string;
