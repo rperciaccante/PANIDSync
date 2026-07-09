@@ -60,7 +60,8 @@ export function extractRecord(
 ): ExtractedRecord | null {
   const sourceIp = pick(obj, [
     ipField,
-    "SourceIP",
+    "SourceIP",     // zero_trust_network_sessions
+    "IPAddress",    // access_requests
     "SessionOriginIP",
     "OriginIP",
     "ClientIP",
@@ -79,6 +80,8 @@ export function extractRecord(
 
   if (!sourceIp) return null;
   if (!userEmail && !userId) return null;
+  // access_requests: skip denied logins — a denied user is not authenticated.
+  if (obj.Allowed === false) return null;
 
   return {
     sourceIp,
@@ -90,8 +93,9 @@ export function extractRecord(
     dataset,
     eventTime: pick(obj, [
       "Timestamp",
+      "SessionStartTime", // zero_trust_network_sessions
+      "CreatedAt",        // access_requests
       "Datetime",
-      "CreatedAt",
       "EventTimeUTC",
       "timestamp",
     ]),
