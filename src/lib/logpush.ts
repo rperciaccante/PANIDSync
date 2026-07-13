@@ -85,6 +85,15 @@ export function extractRecord(
 
   return {
     sourceIp,
+    internalIp: pick(obj, [
+      "SourceInternalIP", // zero_trust_network_sessions (client LAN IP)
+      "SourceInternalIp",
+      "InternalIP",
+      "DeviceInternalIP",
+      "SrcInternalIP",
+      "PrivateIP",
+      "internal_ip",
+    ]),
     userEmail,
     userId,
     deviceId: pick(obj, ["DeviceID", "DeviceId", "device_id"]),

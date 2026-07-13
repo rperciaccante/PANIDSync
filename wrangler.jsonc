@@ -56,6 +56,11 @@
     // Which Logpush dataset field carries the client IP we map to a user.
     // For zero_trust_network_sessions "SourceIP" is the client's public IP.
     "IP_FIELD": "SourceIP",
+    // Which IP is pushed to PAN as the User-ID mapping key:
+    //   "internal" = client's SourceInternalIP (what a firewall behind the
+    //                tunnel sees). Rows without an internal IP are skipped.
+    //   "source"   = public source IP.
+    "PAN_IP_SOURCE": "internal",
     // Palo Alto firewall base URL. Default points at THIS worker's built-in
     // mock receiver so the whole flow works with zero external dependencies.
     // Set to https://<firewall> to target a real device.

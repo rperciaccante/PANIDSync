@@ -19,6 +19,18 @@ export function panUserName(m: Mapping, prefix: string): string {
   return prefix ? `${prefix}${base}` : base;
 }
 
+/**
+ * The IP to send to PAN for this mapping, per PAN_IP_SOURCE. In "internal" mode
+ * (default) this is the client's SourceInternalIP — the address a firewall
+ * behind the tunnel actually sees; returns null when no internal IP is known
+ * (such rows are skipped rather than pushed with a wrong/public IP).
+ */
+export function panMapIp(m: Mapping, env: Env): string | null {
+  const mode = (env.PAN_IP_SOURCE || "internal").toLowerCase();
+  if (mode === "source") return m.source_ip || null;
+  return m.internal_ip || null;
+}
+
 export interface UidEntry {
   name: string;
   ip: string;

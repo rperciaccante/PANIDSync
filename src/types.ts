@@ -14,6 +14,10 @@ export interface Env {
 
   // Vars (wrangler.jsonc)
   IP_FIELD: string;
+  // Which IP is sent to PAN as the User-ID mapping key: "internal" (the
+  // client's SourceInternalIP — what a firewall behind the tunnel sees) or
+  // "source" (the public source IP). Default "internal".
+  PAN_IP_SOURCE: string;
   PAN_HOST: string;
   PAN_VSYS: string;
   PAN_TIMEOUT_MINUTES: string;
@@ -27,6 +31,7 @@ export interface Env {
 export interface Mapping {
   id: number;
   source_ip: string;
+  internal_ip: string | null;
   user_email: string | null;
   user_id: string | null;
   device_id: string | null;
@@ -47,6 +52,7 @@ export interface Mapping {
 /** Normalized fields extracted from a single Logpush record. */
 export interface ExtractedRecord {
   sourceIp: string;
+  internalIp: string | null;
   userEmail: string | null;
   userId: string | null;
   deviceId: string | null;

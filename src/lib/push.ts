@@ -6,7 +6,13 @@ import {
   markLoggedOut,
   markPushed,
 } from "./mappings";
-import { buildUidMessage, panUserName, sendUserId, type UidEntry } from "./pan";
+import {
+  buildUidMessage,
+  panMapIp,
+  panUserName,
+  sendUserId,
+  type UidEntry,
+} from "./pan";
 
 const intVar = (v: string | undefined, dflt: number): number => {
   const n = parseInt(v ?? "", 10);
@@ -72,27 +78,31 @@ export async function pushLogins(
   }
 
   const pushedUsers = new Map<number, string>();
-  const entries: UidEntry[] = rows.map((m) => {
+  const pushedIds: number[] = [];
+  const entries: UidEntry[] = [];
+  for (const m of rows) {
+    const ip = panMapIp(m, env);
+    if (!ip) continue; // no usable IP (e.g. internal mode, no internal IP) — skip
     const name = panUserName(m, prefix);
     pushedUsers.set(m.id, name);
-    return { name, ip: m.source_ip, timeout };
-  });
+    pushedIds.push(m.id);
+    entries.push({ name, ip, timeout });
+  }
+
+  if (entries.length === 0) {
+    return { loginCount: 0, logoutCount: 0, ok: true, results: [] };
+  }
 
   const xml = buildUidMessage({ login: entries });
   const result = await sendUserId(env, xml, "login", opts.origin ?? null);
   await recordPush(env, result, opts.trigger);
 
   if (result.ok) {
-    await markPushed(
-      env,
-      rows.map((m) => m.id),
-      pushedUsers,
-      timeout,
-    );
+    await markPushed(env, pushedIds, pushedUsers, timeout);
   }
 
   return {
-    loginCount: result.ok ? rows.length : 0,
+    loginCount: result.ok ? entries.length : 0,
     logoutCount: 0,
     ok: result.ok,
     results: [result],
@@ -111,25 +121,29 @@ export async function pushStaleLogouts(
   }
 
   const prefix = env.PAN_USER_PREFIX || "";
-  const entries: UidEntry[] = rows.map((m) => ({
-    name: m.pushed_user || panUserName(m, prefix),
-    ip: m.source_ip,
-  }));
+  const logoutIds: number[] = [];
+  const entries: UidEntry[] = [];
+  for (const m of rows) {
+    const ip = panMapIp(m, env);
+    if (!ip) continue;
+    entries.push({ name: m.pushed_user || panUserName(m, prefix), ip });
+    logoutIds.push(m.id);
+  }
+  if (entries.length === 0) {
+    return { loginCount: 0, logoutCount: 0, ok: true, results: [] };
+  }
 
   const xml = buildUidMessage({ logout: entries });
   const result = await sendUserId(env, xml, "logout", opts.origin ?? null);
   await recordPush(env, result, opts.trigger);
 
   if (result.ok) {
-    await markLoggedOut(
-      env,
-      rows.map((m) => m.id),
-    );
+    await markLoggedOut(env, logoutIds);
   }
 
   return {
     loginCount: 0,
-    logoutCount: result.ok ? rows.length : 0,
+    logoutCount: result.ok ? entries.length : 0,
     ok: result.ok,
     results: [result],
   };
@@ -140,27 +154,28 @@ export async function pushLogoutsByIds(
   env: Env,
   opts: { trigger: string; ids: number[]; origin?: string | null },
 ): Promise<PushSummary> {
-  const rows = (await getMappingsByIds(env, opts.ids)).filter((m) => !!m.source_ip);
-  if (rows.length === 0) {
+  const rows = await getMappingsByIds(env, opts.ids);
+  const prefix = env.PAN_USER_PREFIX || "";
+  const logoutIds: number[] = [];
+  const entries: UidEntry[] = [];
+  for (const m of rows) {
+    const ip = panMapIp(m, env);
+    if (!ip) continue;
+    entries.push({ name: m.pushed_user || panUserName(m, prefix), ip });
+    logoutIds.push(m.id);
+  }
+  if (entries.length === 0) {
     return { loginCount: 0, logoutCount: 0, ok: true, results: [] };
   }
-  const prefix = env.PAN_USER_PREFIX || "";
-  const entries: UidEntry[] = rows.map((m) => ({
-    name: m.pushed_user || panUserName(m, prefix),
-    ip: m.source_ip,
-  }));
   const xml = buildUidMessage({ logout: entries });
   const result = await sendUserId(env, xml, "logout", opts.origin ?? null);
   await recordPush(env, result, opts.trigger);
   if (result.ok) {
-    await markLoggedOut(
-      env,
-      rows.map((m) => m.id),
-    );
+    await markLoggedOut(env, logoutIds);
   }
   return {
     loginCount: 0,
-    logoutCount: result.ok ? rows.length : 0,
+    logoutCount: result.ok ? entries.length : 0,
     ok: result.ok,
     results: [result],
   };

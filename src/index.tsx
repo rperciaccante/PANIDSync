@@ -9,6 +9,13 @@ import {
   upsertRecords,
 } from "./lib/mappings";
 import {
+  addExclusion,
+  deleteExclusion,
+  isExcluded,
+  listExclusions,
+  loadExclusions,
+} from "./lib/exclusions";
+import {
   pushLogins,
   pushLogoutsByIds,
   runScheduledPush,
@@ -20,7 +27,14 @@ import {
   storeMockCapture,
   summarizeUidMessage,
 } from "./lib/mock";
-import { Dashboard, LogsView, MockView, type PushLogRow } from "./ui/views";
+import {
+  Dashboard,
+  ExclusionsView,
+  LogsView,
+  MockView,
+  SettingsView,
+  type PushLogRow,
+} from "./ui/views";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -67,15 +81,24 @@ app.post("/api/logpush", async (c) => {
 
     const dataset = c.req.query("dataset") || "zero_trust_network_sessions";
     const records = parseNdjson(text);
-    const extracted = records
+    const parsed = records
       .map((r) => extractRecord(r, env.IP_FIELD || "SourceIP", dataset))
       .filter((r): r is NonNullable<typeof r> => r !== null);
+
+    // Bypass list: drop records whose source IP or identity is excluded (e.g.
+    // Cloudflare/WARP egress ranges, or known-bad users) before they ever map.
+    const exclusions = await loadExclusions(env);
+    const extracted = parsed.filter(
+      (r) => !isExcluded(exclusions, r.sourceIp, r.userEmail),
+    );
+    const excluded = parsed.length - extracted.length;
 
     const { upserted, changed } = await upsertRecords(env, extracted);
     return c.json({
       ok: true,
       received: records.length,
       mapped: upserted,
+      excluded,
       pending: changed,
     });
   } catch (err) {
@@ -150,9 +173,13 @@ app.post("/api/", async (c) => {
 app.use("/", accessGuard());
 app.use("/mock", accessGuard());
 app.use("/logs", accessGuard());
+app.use("/exclusions", accessGuard());
+app.use("/settings", accessGuard());
 app.use("/api/mappings", accessGuard());
 app.use("/api/push", accessGuard());
 app.use("/api/mock/clear", accessGuard());
+app.use("/api/exclusions", accessGuard());
+app.use("/api/exclusions/delete", accessGuard());
 
 app.get("/", async (c) => {
   const env = c.env;
@@ -167,6 +194,7 @@ app.get("/", async (c) => {
       mappings={mappings}
       counts={counts}
       panHost={env.PAN_HOST || "self:mock"}
+      panIpSource={(env.PAN_IP_SOURCE || "internal").toLowerCase()}
       mockEnabled={(env.MOCK_ENABLED || "true").toLowerCase() === "true"}
       search={search}
       state={state}
@@ -190,6 +218,59 @@ app.get("/logs", async (c) => {
        FROM push_log ORDER BY ts DESC LIMIT 200`,
   ).all<PushLogRow>();
   return c.html(<LogsView rows={res.results ?? []} />);
+});
+
+app.get("/exclusions", async (c) => {
+  const rows = await listExclusions(c.env);
+  return c.html(<ExclusionsView rows={rows} />);
+});
+
+app.get("/settings", async (c) => {
+  const env = c.env;
+  const cidrs = (await listExclusions(env)).filter((r) => r.kind === "cidr");
+  return c.html(
+    <SettingsView
+      cidrs={cidrs}
+      config={{
+        panHost: env.PAN_HOST || "self:mock",
+        panIpSource: (env.PAN_IP_SOURCE || "internal").toLowerCase(),
+        panVsys: env.PAN_VSYS || "",
+        panUserPrefix: env.PAN_USER_PREFIX || "",
+        timeoutMinutes: env.PAN_TIMEOUT_MINUTES || "60",
+        staleMinutes: env.STALE_AFTER_MINUTES || "120",
+        ipField: env.IP_FIELD || "SourceIP",
+        mockEnabled: (env.MOCK_ENABLED || "true").toLowerCase() === "true",
+      }}
+    />,
+  );
+});
+
+app.post("/api/exclusions", async (c) => {
+  try {
+    const body = await c.req.json<{ kind?: string; value?: string; reason?: string }>();
+    if (!body.value || !body.value.trim())
+      return c.json({ error: "value is required" }, 400);
+    const { purged } = await addExclusion(
+      c.env,
+      body.kind || "cidr",
+      body.value,
+      body.reason?.trim() || null,
+    );
+    return c.json({ ok: true, purged });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+app.post("/api/exclusions/delete", async (c) => {
+  try {
+    const body = await c.req.json<{ id?: number }>();
+    if (!body.id) return c.json({ error: "id is required" }, 400);
+    await deleteExclusion(c.env, body.id);
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+  }
 });
 
 app.get("/api/mappings", async (c) => {

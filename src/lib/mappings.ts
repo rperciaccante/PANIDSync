@@ -22,10 +22,12 @@ export async function upsertRecords(
     // reset push_state to 'pending' and reactivate.
     return env.DB.prepare(
       `INSERT INTO mappings
-         (source_ip, user_email, user_id, device_id, device_name, session_id,
-          dataset, event_time, first_seen, last_seen, push_state, active, raw)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, 'pending', 1, ?10)
+         (source_ip, internal_ip, user_email, user_id, device_id, device_name,
+          session_id, dataset, event_time, first_seen, last_seen, push_state,
+          active, raw)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, 'pending', 1, ?11)
        ON CONFLICT(source_ip) DO UPDATE SET
+         internal_ip = excluded.internal_ip,
          user_id     = excluded.user_id,
          device_id   = excluded.device_id,
          device_name = excluded.device_name,
@@ -45,6 +47,7 @@ export async function upsertRecords(
          user_email  = excluded.user_email`,
     ).bind(
       r.sourceIp,
+      r.internalIp,
       r.userEmail,
       r.userId,
       r.deviceId,
@@ -74,7 +77,7 @@ export async function listMappings(
   const where: string[] = [];
   const binds: unknown[] = [];
   if (opts.search) {
-    where.push(`(user_email LIKE ?${binds.length + 1} OR source_ip LIKE ?${binds.length + 1} OR user_id LIKE ?${binds.length + 1})`);
+    where.push(`(user_email LIKE ?${binds.length + 1} OR source_ip LIKE ?${binds.length + 1} OR internal_ip LIKE ?${binds.length + 1} OR user_id LIKE ?${binds.length + 1})`);
     binds.push(`%${opts.search}%`);
   }
   if (opts.state && opts.state !== "all") {

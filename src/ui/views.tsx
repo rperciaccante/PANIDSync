@@ -1,6 +1,7 @@
 import type { FC } from "hono/jsx";
 import type { Mapping } from "../types";
 import type { MockCapture } from "../lib/mock";
+import type { Exclusion } from "../lib/exclusions";
 
 const STYLE = `
 :root{--bg:#0e1116;--panel:#161b22;--panel2:#1c2430;--border:#2b3441;--fg:#e6edf3;--muted:#8b949e;--accent:#f38020;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--blue:#58a6ff}
@@ -63,8 +64,10 @@ export const Layout: FC<{ title: string; active: string; children?: unknown }> =
         <span class="muted" style="font-size:12px">Zero Trust → Palo Alto User-ID</span>
         <nav>
           <a href="/" class={props.active === "dash" ? "active" : ""}>Mappings</a>
+          <a href="/exclusions" class={props.active === "excl" ? "active" : ""}>Exclusions</a>
           <a href="/mock" class={props.active === "mock" ? "active" : ""}>Mock Receiver</a>
           <a href="/logs" class={props.active === "logs" ? "active" : ""}>Push Log</a>
+          <a href="/settings" class={props.active === "settings" ? "active" : ""}>Settings</a>
         </nav>
       </header>
       <main>{props.children}</main>
@@ -81,6 +84,7 @@ export const Dashboard: FC<{
   mappings: Mapping[];
   counts: Record<string, number>;
   panHost: string;
+  panIpSource: string;
   mockEnabled: boolean;
   search: string;
   state: string;
@@ -98,6 +102,12 @@ export const Dashboard: FC<{
       PAN target: <code>{props.panHost}</code>
       {props.panHost === "self:mock" ? (
         <span class="muted"> — using built-in mock receiver (see <a href="/mock">Mock Receiver</a>)</span>
+      ) : null}
+      <span class="muted"> · maps </span>
+      <code>{props.panIpSource === "source" ? "public source IP" : "internal IP"}</code>
+      <span class="muted"> to PAN</span>
+      {props.panIpSource !== "source" ? (
+        <span class="muted"> (rows without an internal IP are not pushed)</span>
       ) : null}
     </div>
 
@@ -125,7 +135,7 @@ export const Dashboard: FC<{
         <thead>
           <tr>
             <th style="width:28px"><input type="checkbox" onclick="toggleAll(this)" /></th>
-            <th>User</th><th>Source IP</th><th>User ID</th><th>Device</th>
+            <th>User</th><th>Source IP</th><th>Internal IP</th><th>User ID</th><th>Device</th>
             <th>State</th><th>Last seen</th><th>Pushed as</th>
           </tr>
         </thead>
@@ -135,6 +145,7 @@ export const Dashboard: FC<{
               <td><input type="checkbox" class="rowchk" value={m.id} /></td>
               <td>{m.user_email ?? <span class="muted">—</span>}</td>
               <td class="mono">{m.source_ip}</td>
+              <td class="mono">{m.internal_ip ?? <span class="muted">—</span>}</td>
               <td class="mono muted">{m.user_id ?? "—"}</td>
               <td class="muted">{m.device_name ?? m.device_id ?? "—"}</td>
               <td><span class={`badge ${m.push_state}`}>{m.push_state}</span></td>
@@ -207,6 +218,136 @@ export const LogsView: FC<{ rows: PushLogRow[] }> = (props) => (
   </Layout>
 );
 
+export const ExclusionsView: FC<{ rows: Exclusion[] }> = (props) => (
+  <Layout title="Exclusions" active="excl">
+    <div class="cfg">
+      Bypass list. Any Logpush record whose <b>source IP</b> falls in an excluded
+      CIDR, or whose <b>identity</b> matches an excluded email, is ignored on
+      ingest and never pushed to PAN. Adding an entry also purges existing
+      mappings it matches (use it to clear/hide known-bad identities).
+      <span class="muted"> Cloudflare / WARP egress ranges are seeded by default.</span>
+    </div>
+
+    <div id="flash" class="flash" />
+
+    <form class="toolbar" onsubmit="return addExcl(event)">
+      <select id="ex-kind">
+        <option value="cidr">CIDR / IP</option>
+        <option value="email">Email</option>
+        <option value="domain">Domain</option>
+      </select>
+      <input type="text" id="ex-value" placeholder="104.28.0.0/16  ·  user@corp.com  ·  cloudflareaccess.com" />
+      <input type="text" id="ex-reason" placeholder="reason (optional)" />
+      <button type="submit" class="primary">Add exclusion</button>
+    </form>
+
+    {props.rows.length === 0 ? (
+      <div class="empty">No exclusions defined.</div>
+    ) : (
+      <table>
+        <thead>
+          <tr><th>Kind</th><th>Value</th><th>Reason</th><th>Added</th><th style="width:80px" /></tr>
+        </thead>
+        <tbody>
+          {props.rows.map((r) => (
+            <tr>
+              <td><span class="badge stale">{r.kind}</span></td>
+              <td class="mono">{r.value}</td>
+              <td class="muted">{r.reason ?? "—"}</td>
+              <td class="muted">{fmtTime(r.created_at)}</td>
+              <td>
+                <button type="button" class="ghost" onclick={`delExcl(${r.id})`}>Remove</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+
+    <script dangerouslySetInnerHTML={{ __html: EXCL_JS }} />
+  </Layout>
+);
+
+export interface RuntimeConfig {
+  panHost: string;
+  panIpSource: string;
+  panVsys: string;
+  panUserPrefix: string;
+  timeoutMinutes: string;
+  staleMinutes: string;
+  ipField: string;
+  mockEnabled: boolean;
+}
+
+export const SettingsView: FC<{ cidrs: Exclusion[]; config: RuntimeConfig }> = (
+  props,
+) => (
+  <Layout title="Settings" active="settings">
+    <h2 style="font-size:15px;margin:0 0 10px">Excluded networks (CIDR)</h2>
+    <div class="cfg">
+      Source IPs inside these networks are ignored on ingest and never pushed to
+      PAN. Use this to bypass Cloudflare / WARP egress ranges or any other
+      network whose addresses aren't real client device IPs. Adding a network
+      also purges existing mappings whose source IP falls inside it.
+    </div>
+
+    <div id="flash" class="flash" />
+
+    <form class="toolbar" onsubmit="return addCidr(event)">
+      <input type="text" id="cidr-value" placeholder="e.g. 104.28.0.0/16 or 10.0.0.0/8" />
+      <input type="text" id="cidr-reason" placeholder="reason (optional)" />
+      <button type="submit" class="primary">Add network</button>
+    </form>
+
+    {props.cidrs.length === 0 ? (
+      <div class="empty">No excluded networks defined.</div>
+    ) : (
+      <table>
+        <thead>
+          <tr><th>Network</th><th>Reason</th><th>Added</th><th style="width:80px" /></tr>
+        </thead>
+        <tbody>
+          {props.cidrs.map((r) => (
+            <tr>
+              <td class="mono">{r.value}</td>
+              <td class="muted">{r.reason ?? "—"}</td>
+              <td class="muted">{fmtTime(r.created_at)}</td>
+              <td>
+                <button type="button" class="ghost" onclick={`delCidr(${r.id})`}>Remove</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+
+    <h2 style="font-size:15px;margin:26px 0 10px">Runtime configuration</h2>
+    <div class="cfg">
+      These are set as Worker vars/secrets (<code>wrangler.jsonc</code> /
+      <code>wrangler secret</code>) and shown here for reference.
+    </div>
+    <table>
+      <tbody>
+        <tr><td>PAN target</td><td class="mono">{props.config.panHost}</td></tr>
+        <tr>
+          <td>IP pushed to PAN</td>
+          <td class="mono">
+            {props.config.panIpSource === "source" ? "source (public IP)" : "internal (SourceInternalIP)"}
+          </td>
+        </tr>
+        <tr><td>PAN vsys</td><td class="mono">{props.config.panVsys || "—"}</td></tr>
+        <tr><td>PAN user prefix</td><td class="mono">{props.config.panUserPrefix || "—"}</td></tr>
+        <tr><td>Login timeout (min)</td><td class="mono">{props.config.timeoutMinutes}</td></tr>
+        <tr><td>Stale logout after (min)</td><td class="mono">{props.config.staleMinutes}</td></tr>
+        <tr><td>Ingest IP field</td><td class="mono">{props.config.ipField}</td></tr>
+        <tr><td>Mock receiver</td><td class="mono">{props.config.mockEnabled ? "enabled" : "disabled"}</td></tr>
+      </tbody>
+    </table>
+
+    <script dangerouslySetInnerHTML={{ __html: SET_JS }} />
+  </Layout>
+);
+
 export interface PushLogRow {
   ts: string;
   action: string;
@@ -230,4 +371,35 @@ async function push(action){const ids=selectedIds();if(!ids.length){return flash
 async function pushAll(){const {r,j}=await post('/api/push',{action:'login',all:true});
   if(r.ok){flash('Pushed '+(j.loginCount||0)+' pending mapping(s).',j.ok!==false);setTimeout(()=>location.reload(),900)}else{flash(j.error||'Push failed',false)}}
 async function clearMock(){const {r}=await post('/api/mock/clear');if(r.ok){location.reload()}}
+`;
+
+const EXCL_JS = `
+function flash(msg,ok){var f=document.getElementById('flash');if(!f)return;f.textContent=msg;f.className='flash '+(ok?'ok':'err');f.style.display='block';setTimeout(()=>{f.style.display='none'},5000)}
+async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body||{})});const j=await r.json().catch(()=>({}));return{r,j}}
+async function addExcl(e){e.preventDefault();
+  const kind=document.getElementById('ex-kind').value;
+  const value=document.getElementById('ex-value').value.trim();
+  const reason=document.getElementById('ex-reason').value.trim();
+  if(!value){flash('Enter a value first.',false);return false}
+  const {r,j}=await post('/api/exclusions',{kind,value,reason});
+  if(r.ok&&j.ok){flash('Added. Purged '+(j.purged||0)+' existing mapping(s).',true);setTimeout(()=>location.reload(),800)}
+  else{flash(j.error||'Failed to add exclusion',false)}
+  return false}
+async function delExcl(id){const {r,j}=await post('/api/exclusions/delete',{id});
+  if(r.ok&&j.ok){location.reload()}else{flash(j.error||'Failed to remove',false)}}
+`;
+
+const SET_JS = `
+function flash(msg,ok){var f=document.getElementById('flash');if(!f)return;f.textContent=msg;f.className='flash '+(ok?'ok':'err');f.style.display='block';setTimeout(()=>{f.style.display='none'},5000)}
+async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body||{})});const j=await r.json().catch(()=>({}));return{r,j}}
+async function addCidr(e){e.preventDefault();
+  const value=document.getElementById('cidr-value').value.trim();
+  const reason=document.getElementById('cidr-reason').value.trim();
+  if(!value){flash('Enter a CIDR network first.',false);return false}
+  const {r,j}=await post('/api/exclusions',{kind:'cidr',value,reason});
+  if(r.ok&&j.ok){flash('Added. Purged '+(j.purged||0)+' existing mapping(s).',true);setTimeout(()=>location.reload(),800)}
+  else{flash(j.error||'Failed to add network',false)}
+  return false}
+async function delCidr(id){const {r,j}=await post('/api/exclusions/delete',{id});
+  if(r.ok&&j.ok){location.reload()}else{flash(j.error||'Failed to remove',false)}}
 `;
